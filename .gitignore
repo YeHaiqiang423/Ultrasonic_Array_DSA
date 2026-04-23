@@ -1,0 +1,19 @@
+# Vivado 缓存与日志
+*.jou
+*.log
+*.pb
+*.wdb
+*.dir/
+*.str
+.Xil/
+
+# 仿真产生的文件 (全扔进 workspace)
+workspace/
+*.vcd
+*.fst
+*.vvp
+*.o
+
+# 操作系统垃圾
+.DS_Store
+Thumbs.db
