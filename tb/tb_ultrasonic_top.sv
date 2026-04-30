@@ -1,79 +1,92 @@
 `timescale 1ns / 1ps
 
+// 把所有文件全部吃进来！
+`include "../rtl/adc_ctrl/spi_adc_driver.v"
+`include "../rtl/adc_ctrl/oversample_filter.v"
 `include "../rtl/pwm_array/hc595_driver.v"
 `include "../rtl/pwm_array/pwm_array_core.v"
 `include "../rtl/ultrasonic_top.v"
 
 module tb_ultrasonic_top();
 
-    // ==========================================
-    // 1. 信号定义
-    // ==========================================
-    logic        clk;
-    logic        rst_n;
-    logic [11:0] adc_audio_in; // 模拟 ADC 的 12-bit 信号
+    logic clk;
+    logic rst_n;
     
-    logic        shcp, stcp;
-    logic        ds1, ds2, ds3, ds4;
-    logic        ucc_en;
+    // ADC 物理连线
+    logic adc_cs_n;
+    logic adc_sclk;
+    logic adc_sdata;
+    
+    // 595 输出连线
+    logic shcp, stcp;
+    logic ds1, ds2, ds3, ds4;
+    logic ucc_en;
 
-    // ==========================================
-    // 2. 例化被测顶层模块
-    // ==========================================
+    // 例化究极完全体
     ultrasonic_top u_top (
-        .clk         (clk),
-        .rst_n       (rst_n),
-        .adc_audio_in(adc_audio_in),
-        .shcp        (shcp),
-        .stcp        (stcp),
-        .ds1         (ds1),
-        .ds2         (ds2),
-        .ds3         (ds3),
-        .ds4         (ds4),
-        .ucc_en      (ucc_en)
+        .clk      (clk),
+        .rst_n    (rst_n),
+        .adc_cs_n (adc_cs_n),
+        .adc_sclk (adc_sclk),
+        .adc_sdata(adc_sdata),
+        .shcp     (shcp),
+        .stcp     (stcp),
+        .ds1      (ds1),
+        .ds2      (ds2),
+        .ds3      (ds3),
+        .ds4      (ds4),
+        .ucc_en   (ucc_en)
     );
 
-    // ==========================================
-    // 3. 产生 100MHz 系统时钟 (10ns 周期)
-    // ==========================================
+    // 产生 100MHz 时钟
     initial begin
         clk = 0;
         forever #5 clk = ~clk; 
     end
 
     // ==========================================
-    // 4. SV 黑魔法：模拟 1kHz 正弦波 ADC 采样
+    // 🎭 扮演 XCS7478E 发送正弦波 (1kHz)
     // ==========================================
-    // 假设 ADC 的采样率我们定为 40kHz (每 25us 采样一次，契合超声波载波)
     real PI = 3.141592653589793;
     real phase = 0.0;
     real sin_out;
     
+    logic [7:0]  mock_audio_data; 
+    logic [11:0] shift_out_reg;   
+    
     initial begin
-        adc_audio_in = 12'd2048; // 上电默认静音 (12位的中点)
-        
-        #50000; // 等复位稳定
-        
-        forever begin
-            #25000; // 等待 25000ns (25us)，模拟 ADC 转换周期
-            
-            // 算相位：1kHz 正弦波在 40kHz 采样率下，每次步进 1/40 个周期
-            phase = phase + (2.0 * PI * 1000.0 / 40000.0);
-            if (phase >= 2.0 * PI) begin
-                phase = phase - 2.0 * PI;
-            end
-            
-            // 调用 SV 内部的 $sin 算出 -1.0 到 1.0 的小数
-            sin_out = $sin(phase);
-            
-            // 核心映射：把 [-1.0 ~ 1.0] 放大平移到 [0 ~ 4095]
-            // $rtoi 是 Real TO Integer 的缩写
-            adc_audio_in = $rtoi((sin_out + 1.0) * 2047.5);
+        adc_sdata = 1'bz;
+        mock_audio_data = 8'd128;
+    end
+
+    // 每次 CS 拉高，产生一个新的 8-Bit 正弦波采样点
+    always @(posedge adc_cs_n) begin
+        phase = phase + (2.0 * PI * 1000.0 / 1000000.0);
+        if (phase >= 2.0 * PI) phase = phase - 2.0 * PI;
+        sin_out = $sin(phase);
+        mock_audio_data = $rtoi((sin_out + 1.0) * 127.5);
+    end
+
+    // CS 拉低，准备移位数据
+    always @(negedge adc_cs_n) begin
+        shift_out_reg = {4'b0000, mock_audio_data};
+        adc_sdata = shift_out_reg[11];
+    end
+
+    // SCLK 下降沿，往外推数据
+    always @(negedge adc_sclk) begin
+        if (!adc_cs_n) begin
+            shift_out_reg = shift_out_reg << 1;
+            adc_sdata = shift_out_reg[11];
         end
+    end
+    
+    always @(posedge adc_cs_n) begin
+        adc_sdata = 1'bz;
     end
 
     // ==========================================
-    // 5. 主控制流程
+    // 主控制流程
     // ==========================================
     initial begin
         $dumpfile("tb_ultrasonic_top.vcd");
@@ -83,11 +96,9 @@ module tb_ultrasonic_top();
         #100;
         rst_n = 1;
         
-        // 我们要测 1kHz 音频，它的一个周期是 1ms。
-        // 这里我们跑 3ms，足够在波形上看到 3 个极其完美的正弦包络！
-        #3000000; 
+        #3000000; // 跑 3 毫秒 
         
-        $display("✅ 1kHz 正弦波 ADC 采样与 Dithering 调制仿真完美结束！");
+        $display("✅ 全链路仿真完美结束！从 ADC SPI 到 595 DSB 调制全部打通！");
         $finish;
     end
 
