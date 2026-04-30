@@ -1,6 +1,5 @@
 `timescale 1ns / 1ps
 
-// 把所有文件全部吃进来！
 `include "../rtl/adc_ctrl/spi_adc_driver.v"
 `include "../rtl/adc_ctrl/oversample_filter.v"
 `include "../rtl/pwm_array/hc595_driver.v"
