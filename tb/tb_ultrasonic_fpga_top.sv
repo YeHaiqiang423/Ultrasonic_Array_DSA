@@ -5,11 +5,13 @@
 `include "../rtl/pwm_array/hc595_driver.v"
 `include "../rtl/pwm_array/pwm_array_core.v"
 `include "../rtl/ultrasonic_top.v"
+`include "../rtl/ultrasonic_fpga_top.v"
+`include "sim_pll_stub.v"
 
-module tb_ultrasonic_top();
+module tb_ultrasonic_fpga_top();
 
-    logic clk;
-    logic rst_n;
+    logic sys_clk_50m; 
+    logic sys_rst_n;
     
     // ADC 物理连线
     logic adc_cs_n;
@@ -21,26 +23,25 @@ module tb_ultrasonic_top();
     logic ds1, ds2, ds3, ds4;
     logic ucc_en;
 
-    // 例化究极完全体
-    ultrasonic_top u_top (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .adc_cs_n (adc_cs_n),
-        .adc_sclk (adc_sclk),
-        .adc_sdata(adc_sdata),
-        .shcp     (shcp),
-        .stcp     (stcp),
-        .ds1      (ds1),
-        .ds2      (ds2),
-        .ds3      (ds3),
-        .ds4      (ds4),
-        .ucc_en   (ucc_en)
-    );
+    ultrasonic_fpga_top u_top (
+        .sys_clk_50m    (sys_clk_50m),
+        .sys_rst_n      (sys_rst_n),
+        .adc_cs_n       (adc_cs_n),
+        .adc_sclk       (adc_sclk),
+        .adc_sdata      (adc_sdata),
+        .shcp           (shcp),
+        .stcp           (stcp),
+        .ds1            (ds1),
+        .ds2            (ds2),
+        .ds3            (ds3),
+        .ds4            (ds4),
+        .ucc_en         (ucc_en)
+    );      
 
-    // 产生 100MHz 时钟
+    // 产生 50MHz 时钟
     initial begin
-        clk = 0;
-        forever #5 clk = ~clk; 
+        sys_clk_50m = 0;
+        forever #10 sys_clk_50m = ~sys_clk_50m; 
     end
 
     // ==========================================
@@ -88,12 +89,12 @@ module tb_ultrasonic_top();
     // 主控制流程
     // ==========================================
     initial begin
-        $dumpfile("tb_ultrasonic_top.vcd");
-        $dumpvars(0, tb_ultrasonic_top);
+        $dumpfile("tb_ultrasonic_fpga_top.vcd");
+        $dumpvars(0, tb_ultrasonic_fpga_top);
         
-        rst_n = 0;
+        sys_rst_n = 0;
         #100;
-        rst_n = 1;
+        sys_rst_n = 1;
         
         #3000000; // 跑 3 毫秒 
         
