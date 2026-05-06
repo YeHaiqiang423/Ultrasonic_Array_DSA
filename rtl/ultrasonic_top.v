@@ -13,7 +13,7 @@ module ultrasonic_top (
     output wire shcp,
     output wire stcp,
     output wire ds1, ds2, ds3, ds4,
-    output wire ucc_en
+    output wire oe_n
 );
     // 内部信号互联：各功能模块数据流通路
     wire [7:0]  raw_adc_data;
@@ -74,7 +74,7 @@ module ultrasonic_top (
         .ds2         (ds2),
         .ds3         (ds3),
         .ds4         (ds4),
-        .ucc_en      (ucc_en)
+        .oe_n       (oe_n)
     );
 
 endmodule

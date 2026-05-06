@@ -20,11 +20,11 @@ module hc595_parallel_driver (
     output  reg             ds4,        // 芯片数据线 data_in [7:0]
 
     // UCC 驱动使能引脚 
-    output  wire            ucc_en      // 高电平有效 / O
+    output  wire            oe_n       // 低电平有效 / O
 );
 
     // UCC 驱动使能逻辑
-    assign ucc_en = tx_en;
+    assign oe_n = ~ tx_en;
 
     // 状态机定义 
     localparam IDLE  = 2'd0;

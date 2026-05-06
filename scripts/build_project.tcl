@@ -47,33 +47,58 @@ if {[file exists $xdc_file]} {
 set_property top ultrasonic_fpga_top [current_fileset]
 update_compile_order -fileset sources_1
 
+
+
+# ================= 检验 IP 专用的“刹车点” =================
+# puts "\[USER_LOG\] 综合已完成！仅测试 IP 连通性，提前结束流程。"
+# exit 0 
+# ==========================================================
+# --- [新增] 自动化生成 ILA IP 核 ---
+# puts "\[USER_LOG\] 正在代码级生成 ILA 逻辑分析仪..."
+# create_ip -name ila -vendor xilinx.com -library ip -module_name my_ila
+# set_property -dict [list \
+#     CONFIG.C_NUM_OF_PROBES {4} \
+#     CONFIG.C_PROBE0_WIDTH {1} \
+#     CONFIG.C_PROBE1_WIDTH {1} \
+#     CONFIG.C_PROBE2_WIDTH {1} \
+#     CONFIG.C_PROBE3_WIDTH {12} \
+#     CONFIG.C_DATA_DEPTH {4096} \
+# ] [get_ips my_ila]
+# generate_target all [get_files my_ila.xci]
+# synth_ip [get_files my_ila.xci]
+# -----------------------------------
+
 # --- 7. 启动综合 (Synthesis) ---
 puts "\[USER_LOG\] 启动综合 (Synthesis)..."
 launch_runs synth_1 -jobs 8
 wait_on_run synth_1
 
-# ================= 检验 IP 专用的“刹车点” =================
-puts "\[USER_LOG\] 综合已完成！仅测试 IP 连通性，提前结束流程。"
-exit 0 
-# ==========================================================
+# >>>>> 删掉之前的 exit 0，解封下面的代码 <<<<<
 
-# (下面的布线和生成 bit 等今晚跑全流程再解开注释)
-# # --- 8. 启动布局布线 (Implementation) ---
-# puts "[USER_LOG] 🚀 启动布局布线 (Implementation)..."
-# launch_runs impl_1 -jobs 8
-# wait_on_run impl_1
+# --- 8. 启动布局布线 (Implementation) ---
+puts "\[USER_LOG\] 启动布局布线 (Implementation)..."
+launch_runs impl_1 -jobs 8
+wait_on_run impl_1
 
-# # --- 9. 生成 Bitstream ---
-# puts "[USER_LOG] 💾 正在生成最终 Bitstream (.bit)..."
-# launch_runs impl_1 -to_step write_bitstream -jobs 8
-# wait_on_run impl_1
+# --- 9. 生成 Bitstream ---
+puts "\[USER_LOG\] 正在生成最终 Bitstream (.bit)..."
+launch_runs impl_1 -to_step write_bitstream -jobs 8
+wait_on_run impl_1
 
-# # --- 10. 提取产物 ---
-# set bit_result "$work_dir/$prj_name/$prj_name.runs/impl_1/ultrasonic_fpga_top.bit"
-# if {[file exists $bit_result]} {
-#     file copy -force $bit_result "$prj_root/ultrasonic_top_final.bit"
-#     puts "[USER_LOG] 🎉 构建成功！Bit 文件已导出至: ultrasonic_top_final.bit"
-# } else {
-#     puts "ERROR: 未能生成 Bitstream，请检查 build_full_dump.log"
-#     exit 1
-# }
+# --- 10. 提取产物 ---
+set bit_result "$work_dir/$prj_name/$prj_name.runs/impl_1/ultrasonic_fpga_top.bit"
+set ltx_result "$work_dir/$prj_name/$prj_name.runs/impl_1/ultrasonic_fpga_top.ltx"
+
+if {[file exists $bit_result]} {
+    file copy -force $bit_result "$prj_root/ultrasonic_top_final.bit"
+    puts "\[USER_LOG\] 构建成功！Bit 文件已导出至: ultrasonic_top_final.bit"
+    
+    # 顺手把 ltx 文件也拷出来
+    if {[file exists $ltx_result]} {
+        file copy -force $ltx_result "$prj_root/ultrasonic_top_final.ltx"
+        puts "\[USER_LOG\] 探针文件已导出至: ultrasonic_top_final.ltx"
+    }
+} else {
+    puts "ERROR: 未能生成 Bitstream，请检查 build_full_dump.log"
+    exit 1
+}
