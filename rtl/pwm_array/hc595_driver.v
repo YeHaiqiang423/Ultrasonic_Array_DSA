@@ -69,10 +69,10 @@ module hc595_parallel_driver (
                     if (clk_div == 1'b0) begin
                         // 前半周期：SHCP拉低，4 根数据线同时装填弹药！
                         shcp    <= 1'b0;
-                        ds1     <= shift_reg[bit_cnt + 24]; // 取 [31:24] 的某一位
-                        ds2     <= shift_reg[bit_cnt + 16]; // 取 [23:16] 的某一位
-                        ds3     <= shift_reg[bit_cnt + 8];  // 取 [15:8]  的某一位
-                        ds4     <= shift_reg[bit_cnt];      // 取 [7:0]   的某一位
+                        ds4     <= shift_reg[bit_cnt + 24]; // 取 [31:24] 的某一位
+                        ds3     <= shift_reg[bit_cnt + 16]; // 取 [23:16] 的某一位
+                        ds2     <= shift_reg[bit_cnt + 8];  // 取 [15:8]  的某一位
+                        ds1     <= shift_reg[bit_cnt];      // 取 [7:0]   的某一位
                         clk_div <= 1'b1;
                     end else begin
                         // 后半周期：SHCP拉高，4片595同时吞入数据
