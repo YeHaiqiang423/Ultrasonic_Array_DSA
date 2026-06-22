@@ -54,19 +54,33 @@ update_compile_order -fileset sources_1
 # exit 0 
 # ==========================================================
 # --- [新增] 自动化生成 ILA IP 核 ---
-# puts "\[USER_LOG\] 正在代码级生成 ILA 逻辑分析仪..."
-# create_ip -name ila -vendor xilinx.com -library ip -module_name my_ila
-# set_property -dict [list \
-#     CONFIG.C_NUM_OF_PROBES {4} \
-#     CONFIG.C_PROBE0_WIDTH {1} \
-#     CONFIG.C_PROBE1_WIDTH {1} \
-#     CONFIG.C_PROBE2_WIDTH {1} \
-#     CONFIG.C_PROBE3_WIDTH {12} \
-#     CONFIG.C_DATA_DEPTH {4096} \
-# ] [get_ips my_ila]
-# generate_target all [get_files my_ila.xci]
-# synth_ip [get_files my_ila.xci]
+puts "\[USER_LOG\] 正在代码级生成带有存储限定功能的 ILA..."
+create_ip -name ila -vendor xilinx.com -library ip -module_name my_ila
+set_property -dict [list \
+    CONFIG.C_NUM_OF_PROBES {6} \
+    CONFIG.C_PROBE0_WIDTH {8} \
+    CONFIG.C_PROBE1_WIDTH {14} \
+    CONFIG.C_PROBE2_WIDTH {14} \
+    CONFIG.C_PROBE3_WIDTH {22} \
+    CONFIG.C_PROBE4_WIDTH {12} \
+    CONFIG.C_PROBE5_WIDTH {1} \
+    CONFIG.C_DATA_DEPTH {4096} \
+    CONFIG.C_EN_STRG_QUAL {1} 
+] [get_ips my_ila]
+generate_target all [get_files my_ila.xci]
+synth_ip [get_files my_ila.xci]
 # -----------------------------------
+puts "\[USER_LOG\] 正在生成用于观测相位的第二台 ILA (满速采样)..."
+create_ip -name ila -vendor xilinx.com -library ip -module_name ila_pwm
+set_property -dict [list \
+    CONFIG.C_NUM_OF_PROBES {3} \
+    CONFIG.C_PROBE0_WIDTH {200} \
+    CONFIG.C_PROBE1_WIDTH {32} \
+    CONFIG.C_PROBE2_WIDTH {1} \
+    CONFIG.C_DATA_DEPTH {4096} \
+] [get_ips ila_pwm]
+generate_target all [get_files ila_pwm.xci]
+synth_ip [get_files ila_pwm.xci]
 
 # --- 7. 启动综合 (Synthesis) ---
 puts "\[USER_LOG\] 启动综合 (Synthesis)..."

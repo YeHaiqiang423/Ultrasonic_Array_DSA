@@ -48,3 +48,6 @@ set_property IOSTANDARD LVCMOS33 [get_ports adc_sclk]
 
 set_property PACKAGE_PIN U15 [get_ports adc_sdata]
 set_property IOSTANDARD LVCMOS33 [get_ports adc_sdata]
+
+set_property PACKAGE_PIN V16 [get_ports uart_rx]
+set_property IOSTANDARD LVCMOS33 [get_ports uart_rx]

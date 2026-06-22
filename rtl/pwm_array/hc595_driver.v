@@ -67,15 +67,22 @@ module hc595_parallel_driver (
 
                 SHIFT: begin
                     if (clk_div == 1'b0) begin
-                        // 前半周期：SHCP拉低，4 根数据线同时装填弹药！
                         shcp    <= 1'b0;
-                        ds4     <= shift_reg[bit_cnt + 24]; // 取 [31:24] 的某一位
-                        ds3     <= shift_reg[bit_cnt + 16]; // 取 [23:16] 的某一位
-                        ds2     <= shift_reg[bit_cnt + 8];  // 取 [15:8]  的某一位
-                        ds1     <= shift_reg[bit_cnt];      // 取 [7:0]   的某一位
+                        
+                        // 🌟 核心修改：不再使用复杂的加法动态索引，直接取每个字节的最高位！
+                        ds4     <= shift_reg[31];
+                        ds3     <= shift_reg[23];
+                        ds2     <= shift_reg[15];
+                        ds1     <= shift_reg[7];
+                        
+                        // 🌟 真正的硬件移位操作！四个字节同时向左移 1 位，完美避开编译器 Bug
+                        shift_reg[31:24] <= {shift_reg[30:24], 1'b0};
+                        shift_reg[23:16] <= {shift_reg[22:16], 1'b0};
+                        shift_reg[15:8]  <= {shift_reg[14:8],  1'b0};
+                        shift_reg[7:0]   <= {shift_reg[6:0],   1'b0};
+                        
                         clk_div <= 1'b1;
                     end else begin
-                        // 后半周期：SHCP拉高，4片595同时吞入数据
                         shcp    <= 1'b1;
                         clk_div <= 1'b0;
                         if (bit_cnt == 3'd0) begin
