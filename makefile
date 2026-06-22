@@ -47,4 +47,4 @@ clean:
 	rm -rf workspace/
 	rm -rf .Xil/
 	rm -f *.jou *.log *.pb *.str *.vcd *.fst usage_statistics_webtalk.*
-	@echo "\[MAKE\] ✨ 清理完成！"
+	@echo "\[MAKE\] ✨ 清理完成"
