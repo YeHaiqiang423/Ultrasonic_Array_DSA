@@ -1,0 +1,250 @@
+# 📡 超声波相控阵定向声系统 (Ultrasonic Phased Array DSA)
+
+> 基于 Xilinx Zynq FPGA 的 25 通道 (5×5) 超声波相控阵实时波束成形系统，支持串口屏实时控制聚焦/偏转模式与音量。
+
+---
+
+## 📌 项目概述
+
+本项目在 **Mizar Z7** 开发板 (Xilinx Zynq xc7z020clg400-2) 上实现了一套完整的超声波相控阵定向声发射系统。系统通过 SPI ADC 采集音频信号，经数字信号处理后生成 25 路独立的 40kHz PWM 载波，通过 74HC595 移位寄存器阵列驱动 5×5 超声波换能器阵列，实现声束的**电子聚焦**与**电子偏转**。
+
+---
+
+## 🔧 核心技术点
+
+### 1. 时钟管理
+- 外部 50MHz 晶振通过 Xilinx **Clocking Wizard PLL IP** 倍频至 **100MHz** 系统主频
+- PLL `locked` 信号与硬件复位联合生成 `core_rst_n`，确保全系统复位安全
+
+### 2. UART 控制接口
+- 自定义 `uart_rx_driver` 模块，**115200 baud** 串口屏通信
+- 实时解析三路控制指令：
+  - `ctrl_volume [3:0]` — 音量档位 (0~15 级)
+  - `ctrl_mode [3:0]` — 相控阵模式 (0~3: 聚焦/偏转等)
+  - `ctrl_window` — 一键汉明窗加窗使能
+
+### 3. ADC 采集与数字音频前级
+- **SPI ADC 驱动** (`spi_adc_driver`)：对接 XCS7478E，8-bit 并行输出
+- **增益查表** (`gain_lut`)：音量档位 → 线性增益因子映射 (分贝等间隔)
+- **过采样 + 低通滤波** (`oversample_filter`)：数字前级功放，12-bit 精度音频输出，带余数累加防精度丢失
+
+### 4. 相控阵波束成形引擎
+- **相位查表器** (`phase_lut`)：根据模式选择，输出 25 路 × 8-bit = 200-bit 相位偏移总线
+- **25 路 PWM 核心** (`pwm_array_core`)：
+  - 40kHz 载波，139 步 PWM 计数器
+  - AM 调制：音频幅度映射为占空比，带余数累加器
+  - **汉明窗 (Hamming Window)** 空间加权：5×5 权重矩阵，乘法后右移 8-bit，压制栅瓣旁瓣
+  - 每路独立相位偏移 + 环形取模，实现精确时延控制
+
+### 5. 74HC595 高速并行驱动
+- `hc595_parallel_driver`：**4 组并发**高速移位输出
+- 32-bit PWM 总线 → 4 路 DS 数据线 → SHCP/STCP 锁存 → 超声波换能器阵列
+- `driver_ready` 握手信号反馈至 PWM 核心，实现流控
+
+### 6. 片上调试 (ILA)
+- 双 ILA 核自动构建：
+  - **my_ila** (6 探针, 4096 深度)：观测 ADC 原始数据、滤波后音频、相位总线等
+  - **ila_pwm** (3 探针, 满速采样)：观测 200-bit 相位、32-bit PWM 输出、40kHz 节拍
+
+---
+
+## 🏗️ 系统结构框图
+
+```
+                    ┌─────────────────────────────────────────────────────────────┐
+                    │                    Mizar Z7 (Zynq xc7z020)                  │
+                    │                                                             │
+                    │   ┌──────────┐     ┌──────────────────────────────────────┐ │
+  50MHz ───────────►│   │ PLL IP   │     │         ultrasonic_top               │ │
+  XTAL              │   │ 50→100MHz├──►  │                                      │ │
+                    │   └──────────┘     │  ┌──────────────┐                    │ │
+  ┌──────────┐      │                    │  │ SPI ADC      │    ┌────────────┐  │ │
+  │ 串口屏   │      │   ┌──────────┐    │  │ Driver       ├───►│ Gain LUT   │  │ │
+  │ 115200   ├──────┼──►│ UART RX  │    │  │ (XCS7478E)   │    │ (音量→增益)│  │ │
+  │ (控制)   │      │   │ Driver   │    │  └──────┬───────┘    └─────┬──────┘  │ │
+  └──────────┘      │   │          │    │         │ raw_adc          │ gain    │ │
+                    │   └────┬─────┘    │         ▼                  ▼          │ │
+                    │        │ volume   │  ┌──────────────────────────────┐     │ │
+                    │        │ mode     │  │ Oversample + LPF Filter      │     │ │
+                    │        │ window   │  │ (过采样 + 低通滤波 / 数字功放) │     │ │
+                    │        ▼          │  └──────────────┬───────────────┘     │ │
+                    │  ┌─────────┐      │                 │ 12-bit audio        │ │
+                    │  │ Control │      │                 ▼                     │ │
+                    │  │ Bus     │      │  ┌──────────┐  ┌──────────────────┐  │ │
+                    │  │         │      │  │ Phase LUT│  │ PWM Array Core   │  │ │
+                    │  │         ├──────┼─►│ (相位查表)├─►│ 25路 PWM-AM 调制  │  │ │
+                    │  └─────────┘      │  │ 4 种模式  │  │ + Hamming Window │  │ │
+                    │                   │  └──────────┘  └────────┬─────────┘  │ │
+                    │                   │                         │ 32-bit bus  │ │
+                    │                   │                         ▼             │ │
+                    │                   │  ┌──────────────────────────────────┐ │ │
+                    │                   │  │ HC595 Parallel Driver (4组并发)   │ │ │
+                    │                   │  └──────────────┬───────────────────┘ │ │
+                    │                   └─────────────────┼─────────────────────┘ │
+                    └─────────────────────────────────────┼───────────────────────┘
+                                                          │
+                    ┌─────────────────────────────────────┼───────────────────────┐
+                    │              超声波换能器阵列 (5×5)                          │
+                    │     ┌───┬───┬───┬───┬───┐                                   │
+                    │     │ 0 │ 1 │ 2 │ 3 │ 4 │   ◄── DS1~DS4 + SHCP/STCP        │
+                    │     ├───┼───┼───┼───┼───┤       经 74HC595 移位锁存驱动     │
+                    │     │ 5 │ 6 │ 7 │ 8 │ 9 │                                   │
+                    │     ├───┼───┼───┼───┼───┤   40kHz 超声波载波                │
+                    │     │...│...│...│...│...│   各通道独立相位 + 幅度调制        │
+                    │     └───┴───┴───┴───┴───┘                                   │
+                    └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📁 项目结构
+
+```
+Ultrasonic_Array_DSA/
+├── docs/                          # 📖 项目文档
+│   └── PIN.md                     #    引脚分配说明
+│
+├── rtl/                           # 🧬 RTL 源代码
+│   ├── adc_ctrl/                  #    ADC 采集子系统
+│   │   ├── spi_adc_driver.v       #      SPI ADC 物理驱动 (XCS7478E)
+│   │   └── oversample_filter.v    #      过采样 + 低通滤波器
+│   ├── pwm_array/                 #    相控阵发射子系统
+│   │   ├── pwm_array_core.v       #      25路 PWM-AM 核心引擎
+│   │   ├── hc595_driver.v         #      74HC595 四路并发驱动
+│   │   ├── phase_lut.v            #      相控阵相位偏移查表
+│   │   └── gain_lut.v             #      音量-增益分贝查表
+│   ├── uart/                      #    串口控制子系统
+│   │   └── uart_rx_driver.v       #      UART 接收 + 指令解析
+│   ├── ip/                        #    Xilinx IP 核
+│   │   └── ClockingWizard_*.xci   #      PLL 时钟倍频 IP
+│   ├── ultrasonic_top.v           #    🔗 核心业务逻辑顶层 (全链路互联)
+│   └── ultrasonic_fpga_top.v      #    📌 FPGA 物理引脚顶层 (含 PLL 例化)
+│
+├── tb/                            # 🧪 仿真测试平台
+│   ├── adc_ctrl/                  #    ADC 驱动仿真
+│   ├── pwm_array/                 #    PWM 阵列仿真
+│   ├── audio/                     #    🎵 Python 音频工具链
+│   │   ├── audio_processor.py     #      音频信号处理器
+│   │   ├── generate_lut.py        #      LUT 数据生成脚本
+│   │   ├── hex2wav.py             #      HEX → WAV 格式转换
+│   │   └── wav2hex.py             #      WAV → HEX 格式转换
+│   ├── tb_ultrasonic_fpga_top.sv  #    FPGA 顶层系统级仿真
+│   ├── tb_ultrasonic_system_top.sv#    系统全链路仿真
+│   └── tb_pwm_array_core.sv       #    PWM 核心单元仿真
+│
+├── scripts/                       # 🤖 自动化脚本
+│   ├── run_build.sh               #    一键构建 (综合→布局布线→Bitstream)
+│   ├── run_sim.sh                 #    一键仿真 (编译→运行→VCD→FST)
+│   ├── build_project.tcl          #    Vivado 全自动化构建 Tcl 内核
+│   ├── program.tcl                #    一键 JTAG 烧录
+│   ├── capture_ila.tcl            #    一键 ILA 片上波形抓取
+│   └── pin_assign.xdc             #    FPGA 引脚约束文件
+│
+├── ultrasonic_top_final.bit       # 📦 编译产物: 最终 Bitstream
+├── ultrasonic_top_final.ltx       # 📦 编译产物: ILA 探针定义文件
+└── makefile                       #    Make 入口
+```
+
+---
+
+## 🤖 自动化脚本
+
+### 一键构建 — `run_build.sh`
+```bash
+./scripts/run_build.sh
+```
+- 自动调用 Vivado Batch 模式，执行完整流程：
+  - 创建工程 → 导入 RTL → 生成 IP → 加载 XDC 约束
+  - 自动创建双 ILA 核 (my_ila + ila_pwm)
+  - 综合 (synth_1) → 布局布线 (impl_1) → 生成 Bitstream
+- **智能日志过滤**：`tee` 分流 + `while read` 逐行拦截
+  - 💎 自定义 `[USER_LOG]` 高亮显示
+  - ❌ 原生 `ERROR:` 红色标出
+  - ⚠️ `CRITICAL WARNING:` 黄色警告
+  - 过滤数千行冗余 INFO，屏幕仅显示关键进度
+- 产物自动导出至工程根目录：`ultrasonic_top_final.bit` + `.ltx`
+- 完整日志存档：`workspace/build_full_dump.log`
+
+### 一键仿真 — `run_sim.sh`
+```bash
+./scripts/run_sim.sh <RTL源码路径> <TB文件路径> <顶层模块名>
+
+# 示例：仿真 SPI ADC 驱动
+./scripts/run_sim.sh rtl/adc_ctrl/spi_adc_driver.v tb/adc_ctrl/tb_spi_adc_driver.sv tb_spi_adc_driver
+
+# 示例：仿真系统顶层
+./scripts/run_sim.sh rtl/ultrasonic_top.v tb/tb_ultrasonic_top.sv tb_ultrasonic_top
+```
+- 自动流程：`xvlog` 编译 → `xelab` 链接 → `xsim` 仿真运行
+- 仿真结束后自动将 VCD 波形转换为 **FST 格式** (体积更小，GTKWave/Surfer 加载更快)
+- 所有产物输出至 `workspace/` 目录
+
+### 一键烧录 — `program.tcl`
+```bash
+vivado -mode batch -source ./scripts/program.tcl -nolog -nojournal
+```
+- 自动连接 JTAG 服务器 → 识别 Zynq 芯片 → 烧录 Bitstream
+
+### 一键抓取 ILA — `capture_ila.tcl`
+```bash
+vivado -mode batch -source ./scripts/capture_ila.tcl -nolog -nojournal
+```
+- 强制触发 ILA 抓取 4096 采样点 → 导出 `hw_capture.vcd`
+- 可配合 `vcd2fst` 转换后用 Surfer/GTKWave 分析
+
+---
+
+## 🎵 Python 音频工具链
+
+| 脚本 | 功能 |
+|------|------|
+| `wav2hex.py` | 将 `.wav` 音频文件转换为 FPGA 可读取的 `.hex` 格式 |
+| `hex2wav.py` | 将仿真输出的 `.hex` 数据还原为可播放的 `.wav` 文件 |
+| `generate_lut.py` | 生成相位/增益查表的 Verilog 初始化数据 |
+| `audio_processor.py` | 音频预处理 (滤波、归一化、重采样等) |
+
+---
+
+## 🚀 快速上手
+
+### 环境要求
+- **Xilinx Vivado** (需已 source 环境变量)
+- **vcd2fst** (波形格式转换，可选)
+- **GTKWave** 或 **Surfer** (波形查看)
+
+### 典型开发流程
+
+```bash
+# 1. 编译构建
+./scripts/run_build.sh
+
+# 2. 烧录到开发板
+vivado -mode batch -source ./scripts/program.tcl -nolog -nojournal
+
+# 3. 运行仿真验证
+./scripts/run_sim.sh rtl/pwm_array/pwm_array_core.v tb/tb_pwm_array_core.sv tb_pwm_array_core
+
+# 4. 抓取片上波形调试
+vivado -mode batch -source ./scripts/capture_ila.tcl -nolog -nojournal
+```
+
+---
+
+## 📐 关键参数
+
+| 参数 | 值 |
+|------|-----|
+| 目标器件 | Xilinx Zynq xc7z020clg400-2 (Mizar Z7) |
+| 系统主频 | 100 MHz (PLL 从 50MHz 倍频) |
+| 超声波载波频率 | 40 kHz |
+| PWM 分辨率 | 139 步/周期 |
+| 阵列规模 | 5×5 = 25 通道 |
+| 相位精度 | 8-bit / 通道 (200-bit 总线) |
+| 音频精度 | 12-bit (滤波后) |
+| 串口波特率 | 115200 |
+| ADC 接口 | SPI (XCS7478E) |
+| 输出驱动 | 74HC595 × 4 组并发 |
+| ILA 采样深度 | 4096 点 |
+
+---
+
