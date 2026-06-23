@@ -1,21 +1,20 @@
 `timescale 1ns / 1ps
 
 module ultrasonic_top (
-    // 基础时钟复位 (由外部 Top 传入的 100MHz)
     input  wire         clk,           
     input  wire         rst_n,
 
-    // 🎛️ 控制接口：对接外部 Top 传来的串口解析数据
+    // 控制接口 (来自串口解析)
     input  wire [3:0]   ctrl_volume,   // 音量档位 (0~15)
     input  wire [3:0]   ctrl_mode,     // 相控阵模式 (0~3)
     input  wire         ctrl_window,   // 一键加窗使能
 
-    // 🎤 物理接口：对接硬件 ADC (SPI 接口)
+    // ADC 物理接口 (SPI)
     input  wire         adc_sdata,
     output wire         adc_sclk,
     output wire         adc_cs_n,
 
-    // 🔊 物理接口：对接后级 595 移位寄存器阵列 (四线并发)
+    // 74HC595 物理接口 (四线并发)
     output wire         ds1,
     output wire         ds2,
     output wire         ds3,
@@ -25,9 +24,7 @@ module ultrasonic_top (
     output wire         oe_n
 );
 
-    // =========================================================
-    // 内部互联总线 (Wires)
-    // =========================================================
+    // 内部互联总线
     wire [7:0]   raw_adc_data;
     wire         raw_adc_valid;
     
@@ -42,9 +39,7 @@ module ultrasonic_top (
     wire         pwm_valid;
     wire         driver_ready;
 
-    // =========================================================
     // 1. ADC 物理驱动模块
-    // =========================================================
     spi_adc_driver u_adc_drvr (
         .clk        (clk),
         .rst_n      (rst_n),
@@ -55,9 +50,7 @@ module ultrasonic_top (
         .adc_valid  (raw_adc_valid)
     );
 
-    // =========================================================
     // 2. 音量分贝转换查表器
-    // =========================================================
     gain_lut u_gain_lut (
         .clk         (clk),
         .rst_n       (rst_n),
@@ -65,9 +58,7 @@ module ultrasonic_top (
         .gain_factor (linear_gain)
     );
 
-    // =========================================================
-    // 3. 过采样与低通滤波器 (前级数字功放)
-    // =========================================================
+    // 3. 过采样与低通滤波器 (数字前级功放)
     oversample_filter u_filter (
         .clk        (clk),
         .rst_n      (rst_n),
@@ -78,9 +69,7 @@ module ultrasonic_top (
         .audio_valid(filtered_valid)
     );
 
-    // =========================================================
-    // 4. 相控阵聚焦/偏转查表器 (时空控制器)
-    // =========================================================
+    // 4. 相控阵聚焦/偏转查表器
     phase_lut u_phase_lut (
         .clk           (clk),
         .rst_n         (rst_n),
@@ -88,9 +77,7 @@ module ultrasonic_top (
         .phase_out_bus (phase_bus)
     );
 
-    // =========================================================
-    // 5. 25路相控阵 PWM 核心生成引擎
-    // =========================================================
+    // 5. 25 路相控阵 PWM 核心生成引擎
     pwm_array_core u_pwm_core (
         .clk          (clk),
         .rst_n        (rst_n),
@@ -103,19 +90,15 @@ module ultrasonic_top (
         .pwm_valid    (pwm_valid)
     );
 
-    // =========================================================
-   // =========================================================
-    // 6. 后级 595 硬件高速发送驱动 (4组并发发往探头板)
-    // =========================================================
+    // 6. 74HC595 高速并行驱动 (4 组并发输出至探头板)
     hc595_parallel_driver u_595_drvr (
         .clk          (clk),
         .rst_n        (rst_n),
         
-        // 🌟 完美对齐你队友真实的端口名
-        .valid        (pwm_valid),     // 对接 PWM 核心的数据有效信号
-        .data_in      (pwm_out_bus),   // 对接 PWM 核心的 32 位方波总线
-        .tx_en        (1'b1),          // 全局发送使能：给 1 强行拉高，让它火力全开
-        .ready        (driver_ready),  // 接收 595 吐出的就绪信号，反馈给 PWM 核心
+        .valid        (pwm_valid),
+        .data_in      (pwm_out_bus),
+        .tx_en        (1'b1),          // 全局发送使能常开
+        .ready        (driver_ready),
         
         .ds1          (ds1),
         .ds2          (ds2),
